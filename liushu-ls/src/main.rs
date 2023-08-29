@@ -75,15 +75,10 @@ impl LanguageServer for Backend {
                     items: list
                         .iter()
                         .map(|item| {
-                            let label = format!(
-                                "{} {}",
-                                item.text,
-                                item.comment.clone().unwrap_or(item.code.clone())
-                            );
+                            let label = format!("{}", item.text);
 
                             CompletionItem {
                                 label,
-                                sort_text: Some(item.code.clone()),
                                 filter_text: Some(input.to_owned()),
                                 insert_text: Some(item.text.clone()),
                                 kind: Some(CompletionItemKind::TEXT),

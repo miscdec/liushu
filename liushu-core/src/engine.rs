@@ -5,8 +5,9 @@ use std::fs::File;
 
 use itertools::Itertools;
 use patricia_tree::PatriciaMap;
+use redb::{Database, ReadableTable};
 
-use crate::{dict::DictItem, dirs::MyProjectDirs, error::LiushuError};
+use crate::{dict::DICTIONARY, dirs::MyProjectDirs, error::LiushuError};
 
 use self::candidates::{Candidate, CandidateSource};
 
@@ -16,15 +17,17 @@ pub trait InputMethodEngine {
 
 #[derive(Debug)]
 pub struct Engine {
-    trie: PatriciaMap<Vec<DictItem>>,
+    db: Database,
+    trie: PatriciaMap<Vec<String>>,
 }
 
 impl Engine {
     pub fn init(proj_dirs: &MyProjectDirs) -> Result<Self, LiushuError> {
-        let trie: PatriciaMap<Vec<DictItem>> =
+        let db = Database::open(proj_dirs.target_dir.join("sunman.redb"))?;
+        let trie: PatriciaMap<Vec<String>> =
             bincode::deserialize_from(File::open(proj_dirs.target_dir.join("sunman.trie"))?)?;
 
-        Ok(Self { trie })
+        Ok(Self { db, trie })
     }
 }
 
@@ -34,19 +37,27 @@ impl InputMethodEngine for Engine {
             return Ok(vec![]);
         }
 
+        let tx = self.db.begin_read()?;
+        let dictionary = tx.open_table(DICTIONARY)?;
         let result: Vec<Candidate> = self
             .trie
             .iter_prefix(code.as_bytes())
-            .flat_map(|(_, value)| {
-                value.iter().map(|item| Candidate {
-                    text: item.text.clone(),
-                    code: item.code.clone(),
-                    comment: item.comment.clone(),
-                    weight: item.weight,
-                    source: CandidateSource::CodeTable,
+            .flat_map(|(_, value)| value)
+            .unique()
+            .map(|text| {
+                dictionary.get(text.as_str()).map(|a| {
+                    a.map(|v| {
+                        let (weight, comment) = v.value();
+                        Candidate {
+                            text: text.clone(),
+                            weight,
+                            comment: comment.map(|c| c.to_owned()),
+                            source: CandidateSource::CodeTable,
+                        }
+                    })
                 })
             })
-            .unique_by(|i| i.text.clone())
+            .filter_map(|v| v.ok().flatten())
             .sorted_by_key(|i| std::cmp::Reverse(i.weight))
             .collect();
 

@@ -13,7 +13,6 @@ enum CandidateSource {
 
 dictionary Candidate {
     string text;
-    string code;
     string? comment;
     u64 weight;
     CandidateSource source;
